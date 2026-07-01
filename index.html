@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PAWG – Portal de Administração e Workflow de Guias</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.25.9/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/docx@7.8.2/build/index.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        /* Força emojis do Twemoji (estilo Twitter) em todos os sistemas */
+        img.emoji {
+            height: 1.2em;
+            width: 1.2em;
+            margin: 0 .05em 0 .1em;
+            vertical-align: -0.2em;
+            display: inline-block;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- ============================================================
+         🛡️ CAPTURA GLOBAL DE ERROS — exibe erros fatais na tela
+         em vez de tela branca silenciosa
+    ============================================================ -->
+    <div id="fatal-error-panel" style="display:none;position:fixed;top:0;left:0;right:0;z-index:99999;background:#7f1d1d;color:#fff;padding:20px 24px;font-family:monospace;font-size:13px;max-height:60vh;overflow-y:auto;border-bottom:3px solid #ef4444;"></div>
+    <script>
+        (function() {
+            function mostrarErroFatal(titulo, detalhe) {
+                var painel = document.getElementById('fatal-error-panel');
+                if (!painel) return;
+                painel.style.display = 'block';
+                var bloco = document.createElement('div');
+                bloco.style.marginBottom = '12px';
+                bloco.innerHTML = '<strong style="color:#fca5a5">[ERRO] ' + titulo + '</strong><br><span style="color:#fecaca">' + (detalhe || '') + '</span><br><button onclick="location.reload()" style="margin-top:8px;padding:6px 14px;background:#dc2626;color:white;border:none;border-radius:6px;cursor:pointer">🔄 Recarregar</button>';
+                painel.appendChild(bloco);
+            }
+            window.__mostrarErroFatal = mostrarErroFatal;
+            window.onerror = function(msg, src, line, col, err) {
+                mostrarErroFatal(
+                    (msg || 'Erro desconhecido'),
+                    (src ? src + ':' + line : '') + (err && err.stack ? '<br>' + err.stack.substring(0,400) : '')
+                );
+                return false;
+            };
+            window.onunhandledrejection = function(e) {
+                mostrarErroFatal('Promise rejeitada', e.reason ? String(e.reason) : 'sem detalhes');
+            };
+        })();
+    </script>
+
+    <!-- ============================================================
+         🔎 VALIDADOR DE DEPENDÊNCIAS — verifica se CDNs carregaram
+    ============================================================ -->
+    <script>
+        window.addEventListener('DOMContentLoaded', function() {
+            var deps = [
+                { nome: 'React',    ok: typeof React !== 'undefined' },
+                { nome: 'ReactDOM', ok: typeof ReactDOM !== 'undefined' && typeof ReactDOM.createRoot === 'function' },
+                { nome: 'Babel',    ok: typeof Babel !== 'undefined' },
+                { nome: 'firebase', ok: typeof firebase !== 'undefined' }
+            ];
+            var faltando = deps.filter(function(d){ return !d.ok; }).map(function(d){ return d.nome; });
+            if (faltando.length > 0) {
+                window.__mostrarErroFatal(
+                    'Bibliotecas não carregadas: ' + faltando.join(', '),
+                    'Verifique sua conexão com a internet. As seguintes dependências críticas não foram carregadas pelo CDN: <strong>' + faltando.join(', ') + '</strong>'
+                );
+            }
+        });
+    </script>
+
+    <div id="root"></div>
+
+    <!-- ============================================================
+         Ordem de carregamento obrigatória:
+         1. config   — constantes globais (anos, textos, tabelas)
+         2. visa     — CNAEs VISA e helpers de lookup
+         3. api      — rate limiter, consulta CNPJ, normalizador
+         4. firebase — init do banco + destructure React hooks
+         5. componentes (Login antes de App; App antes de mount)
+         6. mount    — createRoot + twemoji observer
+    ============================================================ -->
+    <script type="text/babel" src="js/config.js"></script>
+    <script type="text/babel" src="js/visa.js"></script>
+    <script type="text/babel" src="js/api.js"></script>
+    <script type="text/babel" src="js/firebase.js"></script>
+
+    <script type="text/babel" src="js/components/Login.jsx"></script>
+    <script type="text/babel" src="js/components/Docs.jsx"></script>
+    <script type="text/babel" src="js/components/Taxas.jsx"></script>
+    <script type="text/babel" src="js/components/Recados.jsx"></script>
+    <script type="text/babel" src="js/components/Editais.jsx"></script>
+    <script type="text/babel" src="js/components/App.jsx"></script>
+
+    <script type="text/babel" src="js/mount.js"></script>
+
+</body>
+
+</html>
