@@ -1,5 +1,5 @@
 const ANO_MINIMO = 2018;
-const ANO_MAXIMO = 2026;
+const ANO_MAXIMO = 2030;
 
 // ============================================================
 // ⚙️ CONFIGURAÇÕES DO EDITAL — editar aqui quando trocar de gestor
