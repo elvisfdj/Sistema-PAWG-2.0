@@ -1,3 +1,7 @@
+// ============================================
+// ERROR BOUNDARY - Captura erros React
+// ============================================
+
 class ErrorBoundary extends React.Component {
     constructor(props) {
         super(props);
