@@ -36,4 +36,6 @@ const TABELA_VISA = [
     { min: 601, max: 1000, valorIntegral: 897.50, valorME_EPP: 448.75 },
     { min: 1001, max: 1500, valorIntegral: 1077.00, valorME_EPP: 538.50 },
     { min: 1501, max: Infinity, valorIntegral: 1256.50, valorME_EPP: 628.25 }
-]
+
+];
+
