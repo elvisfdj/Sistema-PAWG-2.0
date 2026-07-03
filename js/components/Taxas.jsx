@@ -1998,7 +1998,7 @@ function Taxas({ valorUfica, setValorUfica }) {
                                     <th className="px-3 py-2">TFLF</th>
                                     <th className="px-3 py-2">ISSQN</th>
                                     <th className="px-3 py-2">VISA R$</th>
-                                    <th className="px-3 py-2">Lançado</th>
+                                    <th className="px-3 py-2">Finalizado</th>
                                     <th className="px-3 py-2">Ações</th>
                                 </tr>
                             </thead>
