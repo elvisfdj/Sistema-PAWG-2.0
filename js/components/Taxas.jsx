@@ -560,8 +560,9 @@ function Taxas({ valorUfica, setValorUfica }) {
 
             const atualizado = { porte, tributacao, situacao, precisaVisa, visaRisco, verificado: true, consultaIncerta, dadosAPI: data };
 
-            // 📍 ENDEREÇO — salvo direto no contribuinte pra não precisar reconsultar o CNPJ depois
-            if (data.address) {
+            // 📍 ENDEREÇO — salvo direto no contribuinte pra não precisar reconsultar o CNPJ depois.
+            // Só para quem precisa de VISA (é pra isso que o endereço serve: inspeção do imóvel).
+            if (data.address && precisaVisa) {
                 atualizado.endereco = {
                     logradouro: data.address.street || '',
                     numero: data.address.number || '',
@@ -1574,8 +1575,10 @@ function Taxas({ valorUfica, setValorUfica }) {
                     // SITUAÇÃO (SEMPRE atualiza)
                     u.situacao = data.status?.text || '';
 
-                    // 📍 ENDEREÇO — SEMPRE atualiza (independe das opções marcadas)
-                    if (data.address) {
+                    // 📍 ENDEREÇO — só pra quem precisa de VISA (é pra isso que serve: inspeção do imóvel).
+                    // Se a opção VISA não foi marcada neste reprocessamento, usa o precisaVisa já salvo do contribuinte.
+                    const precisaVisaAtual = opcoesReproc.visa ? u.precisaVisa : c.precisaVisa;
+                    if (data.address && precisaVisaAtual) {
                         u.endereco = {
                             logradouro: data.address.street || '',
                             numero: data.address.number || '',
