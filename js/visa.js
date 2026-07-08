@@ -69,3 +69,27 @@ function precisaVisaPorCnae(cnae) {
         || CNAES_VISA.MEDIO_RISCO.includes(codigo)
         || CNAES_VISA.BAIXO_RISCO.includes(codigo);
 }
+
+// Retorna 'ALTO' | 'MEDIO' | 'BAIXO' | null para o CNAE informado.
+function getRiscoVisaPorCnae(cnae) {
+    const codigo = normalizeCnae(cnae);
+    if (!codigo) return null;
+    if (CNAES_VISA.ALTO_RISCO.includes(codigo)) return 'ALTO';
+    if (CNAES_VISA.MEDIO_RISCO.includes(codigo)) return 'MEDIO';
+    if (CNAES_VISA.BAIXO_RISCO.includes(codigo)) return 'BAIXO';
+    return null;
+}
+
+// Dado um array de CNAEs (principal + secundários), retorna o MAIOR risco
+// entre eles ('ALTO' > 'MEDIO' > 'BAIXO'), ou null se nenhum exigir VISA.
+const RISCO_VISA_ORDEM = { ALTO: 3, MEDIO: 2, BAIXO: 1 };
+function getMaiorRiscoVisa(cnaes) {
+    let maior = null;
+    (cnaes || []).forEach(cnae => {
+        const risco = getRiscoVisaPorCnae(cnae);
+        if (risco && (!maior || RISCO_VISA_ORDEM[risco] > RISCO_VISA_ORDEM[maior])) {
+            maior = risco;
+        }
+    });
+    return maior;
+}

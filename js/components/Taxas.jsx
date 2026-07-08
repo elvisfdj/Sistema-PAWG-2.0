@@ -15,6 +15,25 @@ function Taxas({ valorUfica, setValorUfica }) {
     const [marcadores, setMarcadores] = useState({});
     const [menuCorAberto, setMenuCorAberto] = useState(null);
 
+    // ── Estados para revelar Endereço (CTRL + hover na linha) ──
+    const [ctrlPressionado, setCtrlPressionado] = useState(false);
+    const [linhaHoverEndereco, setLinhaHoverEndereco] = useState(null);
+    const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+
+    useEffect(() => {
+        const onKeyDown = (e) => { if (e.key === 'Control') setCtrlPressionado(true); };
+        const onKeyUp = (e) => { if (e.key === 'Control') setCtrlPressionado(false); };
+        const onBlur = () => setCtrlPressionado(false);
+        window.addEventListener('keydown', onKeyDown);
+        window.addEventListener('keyup', onKeyUp);
+        window.addEventListener('blur', onBlur);
+        return () => {
+            window.removeEventListener('keydown', onKeyDown);
+            window.removeEventListener('keyup', onKeyUp);
+            window.removeEventListener('blur', onBlur);
+        };
+    }, []);
+
     // ── Estados para modal de observação ───────────────
     const [modalObservacao, setModalObservacao] = useState(null); // { id, observacao, razaoSocial }
     const [observacaoTexto, setObservacaoTexto] = useState('');
@@ -537,8 +556,22 @@ function Taxas({ valorUfica, setValorUfica }) {
             }
 
             const precisaVisa = cnaes.some(cnae => precisaVisaPorCnae(cnae));
+            const visaRisco = getMaiorRiscoVisa(cnaes);
 
-            const atualizado = { porte, tributacao, situacao, precisaVisa, verificado: true, consultaIncerta, dadosAPI: data };
+            const atualizado = { porte, tributacao, situacao, precisaVisa, visaRisco, verificado: true, consultaIncerta, dadosAPI: data };
+
+            // 📍 ENDEREÇO — salvo direto no contribuinte pra não precisar reconsultar o CNPJ depois
+            if (data.address) {
+                atualizado.endereco = {
+                    logradouro: data.address.street || '',
+                    numero: data.address.number || '',
+                    complemento: data.address.details || '',
+                    bairro: data.address.district || '',
+                    cidade: data.address.city || '',
+                    uf: data.address.state || '',
+                    cep: data.address.zip || ''
+                };
+            }
 
             console.log('💾 Atualizando com:', atualizado);
 
@@ -651,6 +684,18 @@ function Taxas({ valorUfica, setValorUfica }) {
         await db.ref(`contribuintes/${ano}/${mes}/${id}`).update({ marcador: cor });
     };
 
+    // 🧹 Desmarca a cor/linha de TODOS os contribuintes carregados (mês/ano atual)
+    const desmarcarTodasCores = async () => {
+        const idsComMarcador = list.filter(l => marcadores[l.id]).map(l => l.id);
+        if (idsComMarcador.length === 0) {
+            alert('Nenhuma linha está marcada com cor.');
+            return;
+        }
+        if (!confirm(`Remover a marcação de cor/linha de ${idsComMarcador.length} contribuinte(s)?`)) return;
+        setMarcadores({});
+        await Promise.all(idsComMarcador.map(id => db.ref(`contribuintes/${ano}/${mes}/${id}`).update({ marcador: null })));
+    };
+
     const calcISSQN = (nivel, trimestre, isento, tipoPessoa) => {
         if (isento || tipoPessoa !== 'CPF' || nivel === 'VARIAVEL') return 0;
         const base = nivel === 'SUPERIOR' ? 8 : 5;
@@ -678,6 +723,33 @@ function Taxas({ valorUfica, setValorUfica }) {
 
         if (tributacao === 'SIMPLES') return faixa.valorME_EPP;
         return faixa.valorIntegral;
+    };
+
+    // 🚩 BANDEIRA VISA — cor por nível de risco do CNAE (Res. SES-RJ 2191/20).
+    // Continua marcável/desmarcável manualmente (clique na bandeira alterna precisaVisa);
+    // quando marcado manualmente sem CNAE de risco calculado, mostra bandeira neutra (azul).
+    const infoBandeiraVisa = (l) => {
+        if (!l.precisaVisa) return { cor: 'text-gray-300', label: 'Sem VISA — clique para marcar' };
+        if (l.visaRisco === 'ALTO') return { cor: 'text-red-600', label: 'VISA — Alto risco' };
+        if (l.visaRisco === 'MEDIO') return { cor: 'text-yellow-500', label: 'VISA — Médio risco' };
+        if (l.visaRisco === 'BAIXO') return { cor: 'text-green-600', label: 'VISA — Baixo risco' };
+        return { cor: 'text-blue-500', label: 'VISA — marcado manualmente (risco não calculado)' };
+    };
+
+    // 📍 Formata o endereço salvo do contribuinte pra exibição no tooltip CTRL+hover.
+    const formatarCEP = (cep) => {
+        const digits = String(cep || '').replace(/\D/g, '');
+        return digits.length === 8 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : cep;
+    };
+    const formatarEndereco = (e) => {
+        if (!e) return null;
+        const partes = [];
+        if (e.logradouro) partes.push(e.numero ? `${e.logradouro}, ${e.numero}` : e.logradouro);
+        if (e.complemento) partes.push(e.complemento);
+        if (e.bairro) partes.push(e.bairro);
+        if (e.cidade || e.uf) partes.push([e.cidade, e.uf].filter(Boolean).join('/'));
+        if (e.cep) partes.push(`CEP ${formatarCEP(e.cep)}`);
+        return partes.length ? partes.join(' — ') : null;
     };
 
     // 🏛️ CÁLCULO TFLF — REGRA OPERACIONAL ANTIGA (validada em produção)
@@ -1496,10 +1568,24 @@ function Taxas({ valorUfica, setValorUfica }) {
                         }
 
                         u.precisaVisa = cnaes.some(z => precisaVisaPorCnae(z));
+                        u.visaRisco = getMaiorRiscoVisa(cnaes);
                     }
 
                     // SITUAÇÃO (SEMPRE atualiza)
                     u.situacao = data.status?.text || '';
+
+                    // 📍 ENDEREÇO — SEMPRE atualiza (independe das opções marcadas)
+                    if (data.address) {
+                        u.endereco = {
+                            logradouro: data.address.street || '',
+                            numero: data.address.number || '',
+                            complemento: data.address.details || '',
+                            bairro: data.address.district || '',
+                            cidade: data.address.city || '',
+                            uf: data.address.state || '',
+                            cep: data.address.zip || ''
+                        };
+                    }
 
                     // ✅ Marcar como verificado
                     u.verificado = true;
@@ -1783,6 +1869,10 @@ function Taxas({ valorUfica, setValorUfica }) {
                             <span>📥 Restaurar</span>
                             <input type="file" accept=".json" onChange={e => { if (e.target.files[0]) restaurarBackup(e.target.files[0]); }} className="hidden" />
                         </label>
+
+                        <button onClick={desmarcarTodasCores} className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600" title="Remove a marcação de cor/linha de todos os contribuintes deste mês">
+                            🧹 Desmarcar Todas
+                        </button>
 
                         <div className="flex items-center gap-2 bg-white border-2 border-blue-500 rounded px-3 py-2 min-w-[300px]">
                             <span className="text-blue-600">{buscandoGlobal ? '⏳' : '🔍'}</span>
@@ -2113,23 +2203,25 @@ function Taxas({ valorUfica, setValorUfica }) {
                                         };
 
                                         return (
-                                            <tr key={l.id} className={`border-t hover:bg-gray-50 ${getRowBgColor()}`}>
+                                            <tr key={l.id} className={`border-t hover:bg-gray-50 ${getRowBgColor()} ${marcadores[l.id] === 'linha' ? 'line-through text-gray-400' : ''}`}>
                                                 <td className="px-2 py-2 text-center font-semibold text-gray-700 bg-gray-50">{idx + 1}</td>
                                                 <td className="px-3 py-2 text-center">
-                                                    {consultando ? <span className="text-blue-600">🔄</span> :
-                                                        isDuplicado ? <span className="text-orange-600">⚠️</span> :
-                                                            l.consultaIncerta ? <span className="text-red-600" title="Falha na consulta ou dados incompletos da Receita - revisar manualmente">🚨</span> :
-                                                                l.verificado ? <span className="text-green-600">✅</span> :
-                                                                    l.editadoManualmente ? <span className="text-purple-600">☑️</span> :
-                                                                        <span className="text-gray-400">🕘</span>}
+                                                    {consultando ? <span className="inline-flex w-6 h-6 items-center justify-center rounded-full bg-blue-100 border border-blue-300" title="Consultando...">🔄</span> :
+                                                        isDuplicado ? <span className="inline-flex w-6 h-6 items-center justify-center rounded-full bg-orange-100 border border-orange-300" title="Duplicado">⚠️</span> :
+                                                            l.consultaIncerta ? <span className="inline-flex w-6 h-6 items-center justify-center rounded-full bg-red-100 border border-red-300" title="Falha na consulta ou dados incompletos da Receita - revisar manualmente">🚨</span> :
+                                                                l.verificado ? <span className="inline-flex w-6 h-6 items-center justify-center rounded-full bg-green-100 border border-green-300" title="Verificado">✅</span> :
+                                                                    l.editadoManualmente ? <span className="inline-flex w-6 h-6 items-center justify-center rounded-full bg-purple-100 border border-purple-300" title="Editado manualmente">☑️</span> :
+                                                                        <span className="inline-flex w-6 h-6 items-center justify-center rounded-full bg-gray-100 border border-gray-300" title="Pendente">🕘</span>}
                                                 </td>
                                                 <td className="px-3 py-2">
                                                     <div className="relative">
                                                         <button
                                                             onClick={() => setMenuCorAberto(menuCorAberto === l.id ? null : l.id)}
-                                                            className="w-6 h-6 rounded-full border-2 border-gray-300 hover:border-gray-400"
-                                                            style={{ backgroundColor: marcadores[l.id] || '#e5e7eb' }}
-                                                        />
+                                                            className="w-6 h-6 rounded-full border-2 border-gray-300 hover:border-gray-400 flex items-center justify-center text-[10px] font-bold text-gray-600"
+                                                            style={{ backgroundColor: (marcadores[l.id] && marcadores[l.id] !== 'linha') ? marcadores[l.id] : '#e5e7eb' }}
+                                                        >
+                                                            {marcadores[l.id] === 'linha' && '—'}
+                                                        </button>
                                                         {menuCorAberto === l.id && (
                                                             <div className="absolute z-10 mt-1 bg-white border rounded shadow-lg p-2 flex gap-1">
                                                                 {['red', 'yellow', 'green', 'blue', 'purple', 'orange'].map(cor => (
@@ -2144,8 +2236,17 @@ function Taxas({ valorUfica, setValorUfica }) {
                                                                     />
                                                                 ))}
                                                                 <button
+                                                                    onClick={() => {
+                                                                        toggleMarcador(l.id, marcadores[l.id] === 'linha' ? null : 'linha');
+                                                                        setMenuCorAberto(null);
+                                                                    }}
+                                                                    className="w-6 h-6 rounded-full border-2 border-gray-400 hover:border-gray-800 bg-white flex items-center justify-center text-[10px] font-bold text-gray-700"
+                                                                    title="Linha (riscar a linha inteira)"
+                                                                >—</button>
+                                                                <button
                                                                     onClick={() => { toggleMarcador(l.id, null); setMenuCorAberto(null); }}
                                                                     className="w-6 h-6 rounded-full border-2 border-gray-300 hover:border-gray-800 bg-white text-xs"
+                                                                    title="Limpar marcação desta linha"
                                                                 >✕</button>
                                                             </div>
                                                         )}
@@ -2160,7 +2261,23 @@ function Taxas({ valorUfica, setValorUfica }) {
                                                     </td>
                                                 )}
                                                 <td className="px-3 py-2 font-mono">{l.documento}</td>
-                                                <td className="px-3 py-2">{l.razaoSocial}</td>
+                                                <td
+                                                    className="px-3 py-2 relative"
+                                                    onMouseEnter={() => setLinhaHoverEndereco(l.id)}
+                                                    onMouseLeave={() => setLinhaHoverEndereco(null)}
+                                                    onMouseMove={e => setMousePos({ x: e.clientX, y: e.clientY })}
+                                                >
+                                                    {l.razaoSocial}
+                                                    {l.endereco && <span className="text-gray-400 ml-1" title="Segure CTRL e passe o mouse para ver o endereço">📍</span>}
+                                                    {linhaHoverEndereco === l.id && ctrlPressionado && (
+                                                        <div
+                                                            className="fixed z-50 bg-gray-900 text-white text-xs rounded shadow-lg px-3 py-2 max-w-xs whitespace-normal break-words"
+                                                            style={{ left: mousePos.x + 14, top: mousePos.y + 14 }}
+                                                        >
+                                                            📍 {formatarEndereco(l.endereco) || 'Endereço não disponível — consulte o CNPJ'}
+                                                        </div>
+                                                    )}
+                                                </td>
                                                 <td className="px-3 py-2 text-center">
                                                     <span className={`px-2 py-1 rounded text-xs font-semibold ${l.situacao === 'Ativa' ? 'bg-green-100 text-green-800 border border-green-300' :
                                                         l.situacao === 'Suspensa' ? 'bg-yellow-100 text-yellow-800 border border-yellow-300' :
@@ -2192,7 +2309,16 @@ function Taxas({ valorUfica, setValorUfica }) {
                                                     </select>
                                                 </td>
                                                 <td className="px-3 py-2 text-center">
-                                                    <input type="checkbox" checked={l.precisaVisa || false} onChange={e => update(l.id, 'precisaVisa', e.target.checked)} className="w-4 h-4" />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => update(l.id, 'precisaVisa', !l.precisaVisa)}
+                                                        title={infoBandeiraVisa(l).label}
+                                                        className={`inline-block hover:scale-110 transition-transform ${infoBandeiraVisa(l).cor}`}
+                                                    >
+                                                        <svg viewBox="0 0 16 16" className="w-4 h-4 fill-current" xmlns="http://www.w3.org/2000/svg">
+                                                            <path d="M14.778.085A.5.5 0 0 1 15 .5V8a.5.5 0 0 1-.314.464L14.5 8l.186.464-.003.001-.006.003-.023.009a12.435 12.435 0 0 1-.397.15c-.264.095-.631.223-1.047.35-.816.252-1.879.523-2.71.523-.847 0-1.548-.28-2.158-.525l-.028-.01C7.68 8.71 7.14 8.5 6.5 8.5c-.7 0-1.638.23-2.437.477A19.626 19.626 0 0 0 3 9.342V15.5a.5.5 0 0 1-1 0V.5a.5.5 0 0 1 1 0v.282c.226-.079.496-.17.79-.26C4.606.272 5.67 0 6.5 0c.84 0 1.524.277 2.121.519l.043.018C9.286.788 9.828 1 10.5 1c.7 0 1.638-.23 2.437-.477a19.587 19.587 0 0 0 1.349-.476l.019-.007.004-.002h.002z"/>
+                                                        </svg>
+                                                    </button>
                                                 </td>
                                                 <td className="px-3 py-2">
                                                     <input type="number" value={l.areaM2 || ''} onChange={e => update(l.id, 'areaM2', Number(e.target.value))} className="px-2 py-1 border rounded w-16 text-xs" disabled={!l.precisaVisa} />
@@ -2253,7 +2379,15 @@ function Taxas({ valorUfica, setValorUfica }) {
                                                         className={`px-2 py-1 rounded text-xs mr-1 ${l.observacao ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'}`}
                                                         title={l.observacao ? `Observação: ${l.observacao}` : 'Adicionar observação'}
                                                     >📘</button>
-                                                    {l.tipoPessoa === 'CNPJ' && !l.verificado && <button onClick={() => consultarCNPJIndividual(l.documento, l.id, l.razaoSocial)} className="px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-xs">🔍</button>}
+                                                    {l.tipoPessoa === 'CNPJ' && (
+                                                        <button
+                                                            onClick={() => consultarCNPJIndividual(l.documento, l.id, l.razaoSocial)}
+                                                            className={`px-2 py-1 text-white rounded text-xs ${l.verificado ? 'bg-teal-600 hover:bg-teal-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+                                                            title={l.verificado ? 'Reprocessar este contribuinte' : 'Consultar CNPJ'}
+                                                        >
+                                                            {l.verificado ? '🔄' : '🔍'}
+                                                        </button>
+                                                    )}
                                                 </td>
                                             </tr>
                                         );
