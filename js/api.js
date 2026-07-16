@@ -6,6 +6,13 @@
 // Quando falhar, o CNPJ é marcado para revisão manual (sem fallback).
 const OPEN_CNPJA_URL = 'https://open.cnpja.com/office/';
 
+// 🆔 LIMPEZA DE DOCUMENTO (CNPJ/CPF) — preparado para o CNPJ alfanumérico
+// da Receita Federal (novos CNPJs emitidos a partir de 2026 podem ter letras
+// A-Z nos 12 primeiros caracteres; os 2 dígitos verificadores continuam numéricos).
+// Por isso NÃO usamos mais \D (que descartaria as letras) — mantemos letras e
+// números e removemos só a máscara (pontos, barra, traço, espaços).
+const limparDocumento = (doc) => String(doc || '').toUpperCase().replace(/[^0-9A-Z]/g, '');
+
 // ============================================================
 // 🚦 RATE LIMITER GLOBAL — compartilhado por TODAS as rotinas
 // ============================================================

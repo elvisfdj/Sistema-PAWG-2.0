@@ -15,6 +15,14 @@ function App() {
     const [valorUfica, setValorUfica] = useState({ 2026: 179.50, 2027: 0, 2028: 0, 2029: 0, 2030: 0 });
     const [recadosNaoLidos, setRecadosNaoLidos] = useState(0);
     const [mostrarLegendas, setMostrarLegendas] = useState(false);
+    const [mostrarManual, setMostrarManual] = useState(false);
+
+    // 📖 Rola até uma seção do Manual (o painel do modal tem overflow próprio,
+    // por isso usamos scrollIntoView num contêiner com id em vez de #hash na URL)
+    const irParaSecaoManual = (id) => {
+        const el = document.getElementById(id);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
 
     useEffect(() => {
         const ref = db.ref('recados');
@@ -69,6 +77,7 @@ function App() {
                             ✉️ Recados
                             {recadosNaoLidos > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">{recadosNaoLidos}</span>}
                         </button>
+                        <button onClick={() => setMostrarManual(true)} className="px-4 py-2 rounded-lg font-medium text-white hover:bg-blue-500">📖 Manual</button>
                         <button onClick={() => setMostrarLegendas(true)} className="px-4 py-2 rounded-lg font-medium text-white hover:bg-blue-500">🎨 Legendas</button>
                         <button onClick={handleLogout} className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 font-medium">🚪 Sair</button>
                     </div>
@@ -108,6 +117,143 @@ function App() {
                         </ul>
 
                         <button onClick={() => setMostrarLegendas(false)} className="w-full mt-4 bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">Fechar</button>
+                    </div>
+                </div>
+            )}
+            {mostrarManual && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setMostrarManual(false)}>
+                    <div className="bg-white rounded-lg max-w-3xl w-full shadow-2xl max-h-[88vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                        <div className="p-6 pb-4 border-b">
+                            <div className="flex items-start justify-between gap-4">
+                                <div>
+                                    <h3 className="text-xl font-bold text-gray-800">📖 Manual do Sistema</h3>
+                                    <p className="text-sm text-gray-500 mt-1">O que cada tela e cada botão do PAWG faz</p>
+                                </div>
+                                <button onClick={() => setMostrarManual(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+                            </div>
+                            <div className="flex flex-wrap gap-2 mt-4">
+                                {[
+                                    ['manual-doc', '📋 Documentos'],
+                                    ['manual-tax', '👽 Contribuintes'],
+                                    ['manual-editais', '📄 Editais'],
+                                    ['manual-recados', '✉️ Recados'],
+                                    ['manual-legendas-ref', '🎨 Legendas'],
+                                ].map(([id, label]) => (
+                                    <button key={id} onClick={() => irParaSecaoManual(id)} className="text-xs px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-full font-medium">
+                                        {label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="p-6 overflow-y-auto text-sm text-gray-700 space-y-8">
+
+                            {/* ===================== DOCUMENTOS ===================== */}
+                            <section id="manual-doc">
+                                <h4 className="text-lg font-bold text-gray-800 mb-2">📋 Documentos — Controle de Numeração</h4>
+                                <p className="mb-2">Controla a numeração sequencial de <b>Editais, Ofícios e Memorandos</b> emitidos pela SAR, no formato <code className="bg-gray-100 px-1 rounded">0001/2026</code>. A numeração de cada tipo é automática: o sistema conta quantos documentos daquele tipo já existem no ano e sugere o próximo número.</p>
+                                <ul className="list-disc list-inside space-y-1 mb-2">
+                                    <li><b>➕ Novo Documento:</b> escolha o tipo, a data, o setor de origem (obrigatório) e destino, e uma observação livre.</li>
+                                    <li><b>Filtros:</b> por tipo de documento, por setor (busca em origem e destino) e por intervalo de datas.</li>
+                                    <li><b>Cards de resumo:</b> total filtrado e, para cada tipo, quantos existem e qual é o próximo número disponível.</li>
+                                    <li><b>✏️ / 🗑️:</b> editar ou excluir um documento diretamente na tabela.</li>
+                                    <li><b>Exportar CSV:</b> baixa a lista filtrada em planilha.</li>
+                                </ul>
+                            </section>
+
+                            {/* ===================== CONTRIBUINTES ===================== */}
+                            <section id="manual-tax">
+                                <h4 className="text-lg font-bold text-gray-800 mb-2">👽 Contribuintes — Lançamento de Taxas</h4>
+                                <p className="mb-2">Tela principal do sistema: controla os contribuintes de um mês/ano, consulta os CNPJs na Receita Federal, calcula TFLF/ISSQN/VISA e organiza tudo em abas.</p>
+
+                                <p className="font-semibold text-gray-700 mt-3 mb-1">Modo de visualização e período</p>
+                                <ul className="list-disc list-inside space-y-1 mb-2">
+                                    <li><b>Mensal:</b> mostra só o mês/ano selecionados (é o modo com atualização em tempo real).</li>
+                                    <li><b>Anual:</b> junta os 12 meses do ano em uma lista só.</li>
+                                    <li><b>Período:</b> junta um intervalo de meses (Início/Fim) do ano.</li>
+                                    <li><b>Valor da UFICA:</b> editável por ano — é o valor usado pra converter o ISSQN calculado em UFICAs para reais.</li>
+                                </ul>
+
+                                <p className="font-semibold text-gray-700 mt-3 mb-1">Cards e abas</p>
+                                <ul className="list-disc list-inside space-y-1 mb-2">
+                                    <li><b>Total / Pendentes / Verificados / Duplicados / Total TFLF / Total ISSQN / Vigilância (VISA):</b> resumo do mês. O card "Pendentes" é clicável e filtra a lista pra mostrar só quem falta consultar.</li>
+                                    <li><b>Abas Principal / MEI / Autônomo / Isento / VISA:</b> filtram pela tributação (ou por precisar de VISA). A aba Principal exclui MEI, Autônomo e Isento.</li>
+                                    <li><b>Aba Duplicidade:</b> mostra CNPJs que aparecem mais de uma vez na base; a inscrição de menor número fica na aba original, as demais (as "duplicatas") ficam só aqui.</li>
+                                    <li><b>Aba Faltas:</b> vazia até você rodar "Consultar Faltas" (veja abaixo).</li>
+                                </ul>
+
+                                <p className="font-semibold text-gray-700 mt-3 mb-1">Barra de ações</p>
+                                <ul className="list-disc list-inside space-y-1 mb-2">
+                                    <li><b>➕ Inserir:</b> adiciona um contribuinte manualmente (Inscrição, Documento, Nome).</li>
+                                    <li><b>📁 Importar TXT:</b> importa várias linhas de uma vez (colunas separadas por Tab: Inscrição, Documento, Nome). Ignora quem já existe (por documento ou inscrição) e classifica CPF automaticamente como Autônomo.</li>
+                                    <li><b>🕵️ Consultar CNPJs:</b> consulta na Receita (via open.cnpja.com) todos os CNPJs do mês ainda não verificados, um de cada vez (limite de 5 consultas/minuto — por isso o delay de ~12s entre cada).</li>
+                                    <li><b>Consultar Faltas:</b> você informa um intervalo de números de inscrição municipal e o sistema mostra quais números <i>não existem</i> no mês atual — e avisa se aquela inscrição já existe em outro mês do ano, pra facilitar conferência.</li>
+                                    <li><b>⚙️ Reprocessar:</b> reconsulta contribuintes já verificados na Receita, deixando você escolher o que atualizar: Porte, Tributação e/ou VISA (o endereço é salvo automaticamente quando a empresa precisa de VISA).</li>
+                                    <li><b>Exportar CSV / 📑 Relatório PDF:</b> exporta a lista atual; o relatório em PDF é agrupado por auditor, com subtotais de TFLF/ISSQN/VISA e total geral.</li>
+                                    <li><b>💾 Backup / 📥 Restaurar:</b> baixa um arquivo JSON com os dados do mês, ou restaura a partir de um arquivo salvo antes.</li>
+                                    <li><b>🧹 Desmarcar Todas:</b> remove a marcação de cor/linha (veja "Cor" abaixo) de todos os contribuintes visíveis na lista, de uma vez.</li>
+                                    <li><b>🔍 Busca rápida:</b> pesquisa por CNPJ/CPF, inscrição ou nome em <i>todos os 12 meses do ano</i> (não só no mês selecionado) — útil pra achar uma empresa sem saber em qual mês ela está.</li>
+                                </ul>
+
+                                <p className="font-semibold text-gray-700 mt-3 mb-1">Colunas da tabela</p>
+                                <ul className="list-disc list-inside space-y-1 mb-2">
+                                    <li><b>Status:</b> ícone rápido — 🔄 consultando, ⚠️ duplicado, 🚨 falha na consulta/dados incompletos (revisar manualmente), ✅ verificado, ☑️ editado manualmente, 🕘 pendente.</li>
+                                    <li><b>Cor:</b> clique na bolinha pra abrir a paleta — 6 cores de prioridade, a opção "—" (Linha, risca o texto da linha inteira) e "✕" pra limpar. Veja o significado de cada cor em <button type="button" onClick={() => { setMostrarManual(false); setMostrarLegendas(true); }} className="text-blue-600 underline">🎨 Legendas</button>.</li>
+                                    <li><b>Identificação do Contribuinte:</b> segure <b>CTRL</b> e passe o mouse sobre o nome pra ver o endereço salvo (quando a empresa precisa de VISA — é só nesse caso que o endereço é guardado).</li>
+                                    <li><b>Situação:</b> situação cadastral trazida da Receita (Ativa, Suspensa, Inapta, Baixada, Nula).</li>
+                                    <li><b>Porte / Tributação:</b> editáveis a qualquer momento; a consulta de CNPJ também os preenche.</li>
+                                    <li><b>VISA?:</b> bandeira colorida pelo nível de risco do CNAE (vermelho=alto, amarelo=médio, verde=baixo, azul=marcado manualmente sem risco calculado). Clique na bandeira liga/desliga manualmente.</li>
+                                    <li><b>Área m²:</b> área do estabelecimento — entra no cálculo do valor de VISA.</li>
+                                    <li><b>N° OS, Auditor, Trimestre, Nível (ISSQN):</b> campos de controle operacional; Trimestre e Nível só se aplicam a autônomos (CPF).</li>
+                                    <li><b>TFLF, ISSQN, VISA R$:</b> valores calculados automaticamente a partir da tributação, porte, nível e área.</li>
+                                    <li><b>Finalizado:</b> SIM/NÃO — controle de que a guia daquele contribuinte já foi lançada/finalizada.</li>
+                                    <li><b>Ações:</b> 🗑️ excluir, 📘 observação (nota interna sobre o contribuinte), 🔍/🔄 consultar (ou reprocessar, se já verificado) individualmente.</li>
+                                </ul>
+                            </section>
+
+                            {/* ===================== EDITAIS ===================== */}
+                            <section id="manual-editais">
+                                <h4 className="text-lg font-bold text-gray-800 mb-2">📄 Editais</h4>
+                                <p className="mb-2">Gera os editais de notificação de contribuintes em <b>.docx</b> (Word), prontos pra publicar.</p>
+                                <ul className="list-disc list-inside space-y-1 mb-2">
+                                    <li><b>Base de dados:</b> escolha um mês específico ou o ano completo.</li>
+                                    <li><b>Regime de tributação:</b> marque quais regimes entram (Simples, Lucro Presumido, Lucro Real, MEI, Autônomo, Banco, Isento) — cada opção mostra quantos contribuintes tem naquele regime.</li>
+                                    <li><b>Configurações:</b> quantidade máxima de contribuintes por edital (o sistema divide em vários arquivos automaticamente) e o número inicial do edital.</li>
+                                    <li><b>Ordenação:</b> primeiro filtra por regime e ordena por Inscrição Municipal pra dividir em lotes; dentro de cada lote, reordena por Razão Social (A–Z).</li>
+                                    <li><b>Prévia:</b> mostra quantos contribuintes entraram, quantos editais serão gerados e o nome de cada arquivo antes de gerar.</li>
+                                    <li><b>Gerar Edital(is):</b> baixa um .docx por lote (Edital_001.docx, Edital_002.docx...), com o texto legal do CTM (Art. 150, 305 e 357) e tabela de contribuintes.</li>
+                                </ul>
+                            </section>
+
+                            {/* ===================== RECADOS ===================== */}
+                            <section id="manual-recados">
+                                <h4 className="text-lg font-bold text-gray-800 mb-2">✉️ Recados</h4>
+                                <p className="mb-2">Mural de comunicados internos entre a equipe — não é um chat, é um registro do que foi combinado/avisado.</p>
+                                <ul className="list-disc list-inside space-y-1 mb-2">
+                                    <li><b>Novo Recado:</b> quem envia, quem recebe, data e a mensagem.</li>
+                                    <li><b>✅ Lido / ↩️ Reabrir:</b> marca ou desmarca um recado como lido. O menu superior mostra um contador de recados não lidos.</li>
+                                    <li><b>Filtros:</b> Todos / Não lidos / Lidos.</li>
+                                    <li><b>🗑️ Excluir:</b> remove o recado.</li>
+                                </ul>
+                            </section>
+
+                            {/* ===================== LEGENDAS (referência cruzada) ===================== */}
+                            <section id="manual-legendas-ref">
+                                <h4 className="text-lg font-bold text-gray-800 mb-2">🎨 Legendas</h4>
+                                <p className="mb-2">Não é uma aba de trabalho — é só um guia rápido do significado de cada cor usada no sistema (marcador de prioridade, bandeira VISA e situação cadastral). Fica no menu superior, ao lado deste Manual.</p>
+                                <button
+                                    type="button"
+                                    onClick={() => { setMostrarManual(false); setMostrarLegendas(true); }}
+                                    className="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg font-medium"
+                                >
+                                    Abrir Legendas →
+                                </button>
+                            </section>
+                        </div>
+
+                        <div className="p-4 border-t">
+                            <button onClick={() => setMostrarManual(false)} className="w-full bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">Fechar</button>
+                        </div>
                     </div>
                 </div>
             )}

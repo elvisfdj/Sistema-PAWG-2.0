@@ -78,6 +78,11 @@ function Taxas({ valorUfica, setValorUfica }) {
 
     const valorUficaAtual = valorUfica[ano] || VALOR_UFICA_2026;
 
+    // 📅 Mês real de um item, pra escrita no Firebase. Fora do modo mensal
+    // (busca global, anual, período) um item pode ser de um mês diferente
+    // do `mes` selecionado — usar o `mes` errado cria/edita o registro errado.
+    const mesDoItem = (item) => (item && item.mesOrigem !== undefined && item.mesOrigem !== null) ? item.mesOrigem : mes;
+
     useEffect(() => {
         let listeners = [];
 
@@ -231,13 +236,64 @@ function Taxas({ valorUfica, setValorUfica }) {
         };
     }, [mes, ano]);
 
+    // 🔄 Recarrega a lista atual (mês/ano, anual ou período) com uma leitura única.
+    // Usada pra restaurar a visão normal depois de limpar a pesquisa global — sem isso,
+    // `list` fica travado com os resultados da busca (que cobrem os 12 meses) até um F5,
+    // porque o listener em tempo real do modo mensal só reage a MUDANÇAS nos dados,
+    // não a "parei de pesquisar".
+    const recarregarListaAtual = async () => {
+        try {
+            if (modoVisualizacao === 'mensal') {
+                const snapshot = await db.ref(`contribuintes/${ano}/${mes}`).once('value');
+                const data = snapshot.val();
+                if (data && typeof data === 'object') {
+                    const lista = Object.entries(data)
+                        .filter(([k, v]) => v && typeof v === 'object')
+                        .map(([k, v]) => ({ id: k, ...v }));
+                    setList(lista);
+                    const marks = {};
+                    lista.forEach(item => { if (item && item.marcador) marks[item.id] = item.marcador; });
+                    setMarcadores(marks);
+                } else {
+                    setList([]);
+                    setMarcadores({});
+                }
+            } else {
+                const inicio = modoVisualizacao === 'periodo' ? Math.min(Math.max(0, periodoInicio || 0), 11) : 0;
+                const fim = modoVisualizacao === 'periodo' ? Math.min(Math.max(0, periodoFim || 11), 11) : 11;
+                const mesInicio = Math.min(inicio, fim);
+                const mesFim = Math.max(inicio, fim);
+                const listaCombinada = [];
+                const marksCombinados = {};
+                for (let m = mesInicio; m <= mesFim; m++) {
+                    const snapshot = await db.ref(`contribuintes/${ano}/${m}`).once('value');
+                    const data = snapshot.val();
+                    if (data && typeof data === 'object') {
+                        Object.entries(data).forEach(([k, v]) => {
+                            if (v && typeof v === 'object') {
+                                listaCombinada.push({ id: k, ...v, mesOrigem: m });
+                                if (v.marcador) marksCombinados[k] = v.marcador;
+                            }
+                        });
+                    }
+                }
+                setList(listaCombinada);
+                setMarcadores(marksCombinados);
+            }
+        } catch (error) {
+            console.error('❌ Erro ao recarregar lista atual:', error);
+        }
+    };
+
     // ============================================
     // BUSCA GLOBAL (todos os meses)
     // ============================================
     useEffect(() => {
         const buscarGlobal = async () => {
             if (!pesquisaRapida || pesquisaRapida.trim().length < 2) {
-                // Se não tem pesquisa, não faz nada (usa o mês atual)
+                // Sem termo de busca: restaura a visão normal (senão a lista fica
+                // travada nos resultados da busca global até um F5)
+                await recarregarListaAtual();
                 return;
             }
 
@@ -257,7 +313,7 @@ function Taxas({ valorUfica, setValorUfica }) {
                                 const item = { id: k, ...v, mesOrigem: m };
                                 
                                 // Verificar se corresponde ao termo de busca
-                                const matchDoc = item.documento && item.documento.replace(/\D/g, '').includes(termo.replace(/\D/g, ''));
+                                const matchDoc = item.documento && limparDocumento(item.documento).includes(limparDocumento(termo));
                                 const matchInsc = item.inscricaoMunicipal && item.inscricaoMunicipal.toLowerCase().includes(termo);
                                 const matchNome = item.razaoSocial && item.razaoSocial.toLowerCase().includes(termo);
                                 
@@ -428,9 +484,11 @@ function Taxas({ valorUfica, setValorUfica }) {
         await db.ref(chave).push(contribuinte);
     };
 
-    const consultarCNPJ = async (cnpj, id) => {
+    const consultarCNPJ = async (cnpjBruto, id) => {
+        const cnpj = limparDocumento(cnpjBruto);
+        const mesReal = mesDoItem(list.find(i => i.id === id));
         try {
-            console.log('🔍 Iniciando consulta CNPJ:', cnpj, 'ID:', id);
+            console.log('🔍 Iniciando consulta CNPJ:', cnpj, 'ID:', id, 'Mês:', mesReal);
             // (rate limit gerenciado pelo RATE_LIMITER global em consultarOpenCnpjaComRetry)
 
             let data = null;
@@ -461,7 +519,7 @@ function Taxas({ valorUfica, setValorUfica }) {
 
                     // 🎯 PERSISTIR o estado de "não encontrado" pra exibir 🚨 na linha
                     try {
-                        await db.ref(`contribuintes/${ano}/${mes}/${id}`).update({
+                        await db.ref(`contribuintes/${ano}/${mesReal}/${id}`).update({
                             consultaIncerta: true,
                             verificado: false
                         });
@@ -492,7 +550,7 @@ function Taxas({ valorUfica, setValorUfica }) {
 
                 // 🎯 PERSISTIR o estado de falha no Firebase pra exibir 🚨 na linha
                 try {
-                    await db.ref(`contribuintes/${ano}/${mes}/${id}`).update({
+                    await db.ref(`contribuintes/${ano}/${mesReal}/${id}`).update({
                         consultaIncerta: true,
                         verificado: false
                     });
@@ -580,7 +638,7 @@ function Taxas({ valorUfica, setValorUfica }) {
                 item.id === id ? { ...item, ...atualizado } : item
             ));
 
-            await db.ref(`contribuintes/${ano}/${mes}/${id}`).update(atualizado);
+            await db.ref(`contribuintes/${ano}/${mesReal}/${id}`).update(atualizado);
 
             setConsultasRealizadas(prev => prev + 1);
 
@@ -590,7 +648,7 @@ function Taxas({ valorUfica, setValorUfica }) {
             console.warn('⚠️ Erro ao consultar CNPJ', cnpj, ':', error.message);
             // 🎯 PERSISTIR o estado de erro pra exibir 🚨 na linha
             try {
-                await db.ref(`contribuintes/${ano}/${mes}/${id}`).update({
+                await db.ref(`contribuintes/${ano}/${mesReal}/${id}`).update({
                     consultaIncerta: true,
                     verificado: false
                 });
@@ -682,19 +740,20 @@ function Taxas({ valorUfica, setValorUfica }) {
     const toggleMarcador = async (id, cor) => {
         const novosMarcadores = { ...marcadores, [id]: cor };
         setMarcadores(novosMarcadores);
-        await db.ref(`contribuintes/${ano}/${mes}/${id}`).update({ marcador: cor });
+        const mesReal = mesDoItem(list.find(i => i.id === id));
+        await db.ref(`contribuintes/${ano}/${mesReal}/${id}`).update({ marcador: cor });
     };
 
     // 🧹 Desmarca a cor/linha de TODOS os contribuintes carregados (mês/ano atual)
     const desmarcarTodasCores = async () => {
-        const idsComMarcador = list.filter(l => marcadores[l.id]).map(l => l.id);
-        if (idsComMarcador.length === 0) {
+        const itensComMarcador = list.filter(l => marcadores[l.id]);
+        if (itensComMarcador.length === 0) {
             alert('Nenhuma linha está marcada com cor.');
             return;
         }
-        if (!confirm(`Remover a marcação de cor/linha de ${idsComMarcador.length} contribuinte(s)?`)) return;
+        if (!confirm(`Remover a marcação de cor/linha de ${itensComMarcador.length} contribuinte(s)?`)) return;
         setMarcadores({});
-        await Promise.all(idsComMarcador.map(id => db.ref(`contribuintes/${ano}/${mes}/${id}`).update({ marcador: null })));
+        await Promise.all(itensComMarcador.map(item => db.ref(`contribuintes/${ano}/${mesDoItem(item)}/${item.id}`).update({ marcador: null })));
     };
 
     const calcISSQN = (nivel, trimestre, isento, tipoPessoa) => {
@@ -823,7 +882,7 @@ function Taxas({ valorUfica, setValorUfica }) {
             return;
         }
 
-        const clean = formInserir.documento.replace(/\D/g, '');
+        const clean = limparDocumento(formInserir.documento);
         const novo = {
             inscricaoMunicipal: formInserir.inscricao || '',
             documento: clean,
@@ -896,7 +955,7 @@ function Taxas({ valorUfica, setValorUfica }) {
 
                     if (!doc) continue;
 
-                    const clean = doc.replace(/\D/g, '');
+                    const clean = limparDocumento(doc);
 
                     // ✅ VERIFICAR DUPLICIDADE por DOCUMENTO ou INSCRIÇÃO
                     if (docsExistentes.has(clean) || (insc && inscricoesExistentes.has(insc))) {
@@ -1303,7 +1362,7 @@ function Taxas({ valorUfica, setValorUfica }) {
         if (pesquisaRapida) {
             const termo = pesquisaRapida.trim().toLowerCase();
             listaFiltrada = listaFiltrada.filter(item =>
-                (item.documento && item.documento.replace(/\D/g, '').includes(termo.replace(/\D/g, ''))) ||
+                (item.documento && limparDocumento(item.documento).includes(limparDocumento(termo))) ||
                 (item.inscricaoMunicipal && item.inscricaoMunicipal.toLowerCase().includes(termo)) ||
                 (item.razaoSocial && item.razaoSocial.toLowerCase().includes(termo))
             );
@@ -1394,14 +1453,16 @@ function Taxas({ valorUfica, setValorUfica }) {
         if (item && campo === 'tributacao' && item.consultaIncerta) {
             updates.consultaIncerta = false;
         }
-        
-        await db.ref(`contribuintes/${ano}/${mes}/${id}`).update(updates);
+
+        await db.ref(`contribuintes/${ano}/${mesDoItem(item)}/${id}`).update(updates);
     };
 
     const excluir = async (id) => {
         if (confirm('Tem certeza que deseja excluir?')) {
+            const item = list.find(i => i.id === id);
+
             // ✅ Remove do Firebase
-            await db.ref(`contribuintes/${ano}/${mes}/${id}`).remove();
+            await db.ref(`contribuintes/${ano}/${mesDoItem(item)}/${id}`).remove();
 
             // ✅ Remove da lista local IMEDIATAMENTE
             setList(prev => prev.filter(item => item.id !== id));
@@ -1449,7 +1510,8 @@ function Taxas({ valorUfica, setValorUfica }) {
 
             for (let i = 0; i < listaParaReprocessar.length; i++) {
                 const c = listaParaReprocessar[i];
-                const cnpj = c.documento.replace(/\D/g, ''); // Remove formatação
+                const cnpj = limparDocumento(c.documento); // Remove máscara, preserva letras (CNPJ alfanumérico)
+                const mesReal = mesDoItem(c);
 
                 // ✅ ATUALIZAR CONTADOR
                 setProcessoAtual(i + 1);
@@ -1477,7 +1539,7 @@ function Taxas({ valorUfica, setValorUfica }) {
                             setTimeout(() => setProcessoAviso(''), 2000);
                             // 🎯 PERSISTIR para exibir 🚨
                             try {
-                                await db.ref(`contribuintes/${ano}/${mes}/${c.id}`).update({
+                                await db.ref(`contribuintes/${ano}/${mesReal}/${c.id}`).update({
                                     consultaIncerta: true,
                                     verificado: false
                                 });
@@ -1500,7 +1562,7 @@ function Taxas({ valorUfica, setValorUfica }) {
                         setTimeout(() => setProcessoAviso(''), 2000);
                         // 🎯 PERSISTIR para exibir 🚨
                         try {
-                            await db.ref(`contribuintes/${ano}/${mes}/${c.id}`).update({
+                            await db.ref(`contribuintes/${ano}/${mesReal}/${c.id}`).update({
                                 consultaIncerta: true,
                                 verificado: false
                             });
@@ -1594,7 +1656,7 @@ function Taxas({ valorUfica, setValorUfica }) {
                     u.verificado = true;
 
                     // 💾 ATUALIZAR FIREBASE + LISTA LOCAL
-                    await db.ref(`contribuintes/${ano}/${mes}/${c.id}`).update(u);
+                    await db.ref(`contribuintes/${ano}/${mesReal}/${c.id}`).update(u);
                     setList(prevList => prevList.map(item =>
                         item.id === c.id ? { ...item, ...u } : item
                     ));
@@ -1873,7 +1935,7 @@ function Taxas({ valorUfica, setValorUfica }) {
                             <input type="file" accept=".json" onChange={e => { if (e.target.files[0]) restaurarBackup(e.target.files[0]); }} className="hidden" />
                         </label>
 
-                        <button onClick={desmarcarTodasCores} className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600" title="Remove a marcação de cor/linha de todos os contribuintes deste mês">
+                        <button onClick={desmarcarTodasCores} className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600" title="Remove a marcação de cor/linha de todos os contribuintes visíveis na lista atual">
                             🧹 Desmarcar Todas
                         </button>
 
@@ -1989,7 +2051,7 @@ function Taxas({ valorUfica, setValorUfica }) {
                                                 return;
                                             }
 
-                                            const clean = formInserir.documento.replace(/\D/g, '');
+                                            const clean = limparDocumento(formInserir.documento);
                                             const novo = {
                                                 inscricaoMunicipal: formInserir.inscricao || '',
                                                 documento: clean,
