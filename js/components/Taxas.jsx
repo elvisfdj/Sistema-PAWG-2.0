@@ -63,6 +63,11 @@ function Taxas({ valorUfica, setValorUfica }) {
     const [opcoesReproc, setOpcoesReproc] = useState({ visa: true, porte: true, trib: true });
     const [rodando, setRodando] = useState(false);
 
+    // ── Estados para Relatório PDF (quinzenal, sem repetir quem já foi relatado) ──
+    const [modalRelatorio, setModalRelatorio] = useState(false);
+    const [modoRelatorio, setModoRelatorio] = useState('novos');
+    const [gerandoRelatorio, setGerandoRelatorio] = useState(false);
+
     // PROGRESSO
     const [processando, setProcessando] = useState(false);
     const [processoTitulo, setProcessoTitulo] = useState('');
@@ -756,6 +761,19 @@ function Taxas({ valorUfica, setValorUfica }) {
         await Promise.all(itensComMarcador.map(item => db.ref(`contribuintes/${ano}/${mesDoItem(item)}/${item.id}`).update({ marcador: null })));
     };
 
+    // 🏷️ Escape hatch: força todo mundo de volta pro estado "ainda não relatado",
+    // sem tocar em Auditor/OS. Útil se quiser gerar de novo do zero pra todos.
+    const resetarRelatorio = async () => {
+        const itensRelatados = list.filter(l => l.relatorioGeradoEm);
+        if (itensRelatados.length === 0) {
+            alert('Nenhum contribuinte está marcado como já relatado.');
+            return;
+        }
+        if (!confirm(`Isso vai fazer ${itensRelatados.length} contribuinte(s) voltarem a aparecer no próximo relatório "Somente novos" (o Auditor e o N° OS de cada um NÃO são afetados). Continuar?`)) return;
+        await Promise.all(itensRelatados.map(item => db.ref(`contribuintes/${ano}/${mesDoItem(item)}/${item.id}`).update({ relatorioGeradoEm: null })));
+        setList(prevList => prevList.map(item => itensRelatados.some(r => r.id === item.id) ? { ...item, relatorioGeradoEm: null } : item));
+    };
+
     const calcISSQN = (nivel, trimestre, isento, tipoPessoa) => {
         if (isento || tipoPessoa !== 'CPF' || nivel === 'VARIAVEL') return 0;
         const base = nivel === 'SUPERIOR' ? 8 : 5;
@@ -1038,7 +1056,9 @@ function Taxas({ valorUfica, setValorUfica }) {
     // 📑 RELATÓRIO PDF POR AUDITOR + COMPETÊNCIA
     // Gera um ZIP com 1 PDF por auditor + 1 PDF de Resumo Geral
     // ============================================
-    const gerarRelatorioAuditores = async () => {
+    // 📑 modo 'novos' = só quem ainda não entrou em nenhum relatório anterior (evita
+    // duplicar quinzena a quinzena); modo 'todos' = gera com todo mundo, como antes.
+    const gerarRelatorioAuditores = async (modo = 'todos') => {
         try {
             if (typeof window.jspdf === 'undefined') {
                 alert('❌ Biblioteca jsPDF não carregou. Verifique sua conexão e recarregue a página.');
@@ -1053,12 +1073,18 @@ function Taxas({ valorUfica, setValorUfica }) {
                 return;
             }
 
+            const listaRelatorio = modo === 'novos' ? list.filter(l => !l.relatorioGeradoEm) : list;
+            if (modo === 'novos' && listaRelatorio.length === 0) {
+                alert('✅ Todos os contribuintes já foram incluídos em um relatório anterior.\n\nSe quiser gerar de novo com todo mundo, escolha a opção "Todos".');
+                return;
+            }
+
             const { jsPDF } = window.jspdf;
             const JSZip = window.JSZip;
 
             // Agrupar por auditor (vazio/null vira "SEM AUDITOR ATRIBUÍDO")
             const agrupado = {};
-            list.forEach(l => {
+            listaRelatorio.forEach(l => {
                 const aud = (l.auditor && String(l.auditor).trim()) || 'SEM AUDITOR ATRIBUÍDO';
                 if (!agrupado[aud]) agrupado[aud] = [];
                 agrupado[aud].push(l);
@@ -1204,7 +1230,7 @@ function Taxas({ valorUfica, setValorUfica }) {
             resumoDoc.setFont('helvetica', 'normal');
             resumoDoc.text(`Competência: ${competencia}`, 40, 74);
             resumoDoc.text(`Total de auditores com lançamentos: ${nomesAuditores.length}`, 40, 90);
-            resumoDoc.text(`Total de contribuintes: ${list.length}`, 40, 106);
+            resumoDoc.text(`Total de contribuintes: ${listaRelatorio.length}`, 40, 106);
             resumoDoc.text(dataGeracao, resumoDoc.internal.pageSize.getWidth() - 40, 74, { align: 'right' });
 
             resumoDoc.autoTable({
@@ -1215,7 +1241,7 @@ function Taxas({ valorUfica, setValorUfica }) {
                     return [nome, String(agrupado[nome].length), 'R$ ' + fmt(t.subTFLF), 'R$ ' + fmt(t.subISSQN), 'R$ ' + fmt(t.subVISA), 'R$ ' + fmt(t.subTotal)];
                 }),
                 foot: [[
-                    { content: `TOTAL GERAL (${list.length} contribuintes)`, colSpan: 2, styles: { halign: 'right', fontStyle: 'bold' } },
+                    { content: `TOTAL GERAL (${listaRelatorio.length} contribuintes)`, colSpan: 2, styles: { halign: 'right', fontStyle: 'bold' } },
                     { content: 'R$ ' + fmt(totalGeralTFLF), styles: { fontStyle: 'bold' } },
                     { content: 'R$ ' + fmt(totalGeralISSQN), styles: { fontStyle: 'bold' } },
                     { content: 'R$ ' + fmt(totalGeralVISA), styles: { fontStyle: 'bold' } },
@@ -1246,8 +1272,18 @@ function Taxas({ valorUfica, setValorUfica }) {
             a.click();
             setTimeout(() => URL.revokeObjectURL(url), 1000);
 
+            // 🏷️ Marca quem entrou neste relatório, pra não repetir na próxima quinzena.
+            // Não mexe em Auditor/OS — é um campo à parte, só de controle do relatório.
+            const agora = Date.now();
+            await Promise.all(listaRelatorio.map(item =>
+                db.ref(`contribuintes/${ano}/${mesDoItem(item)}/${item.id}`).update({ relatorioGeradoEm: agora })
+            ));
+            setList(prevList => prevList.map(item =>
+                listaRelatorio.some(r => r.id === item.id) ? { ...item, relatorioGeradoEm: agora } : item
+            ));
+
             setProcessoAviso('');
-            alert(`✅ ZIP gerado com ${nomesAuditores.length} relatório(s) de auditor + Resumo Geral.\n\nArquivo: Relatorios_Auditores_${MESES[mes]}_${ano}.zip`);
+            alert(`✅ ZIP gerado com ${nomesAuditores.length} relatório(s) de auditor + Resumo Geral (${listaRelatorio.length} contribuinte(s)).\n\nArquivo: Relatorios_Auditores_${MESES[mes]}_${ano}.zip\n\n${modo === 'novos' ? 'Esses contribuintes foram marcados como já relatados — na próxima geração só entram os novos.' : ''}`);
         } catch (err) {
             setProcessoAviso('');
             console.error('Erro ao gerar relatório PDF:', err);
@@ -1922,7 +1958,7 @@ function Taxas({ valorUfica, setValorUfica }) {
                             Exportar CSV
                         </button>
 
-                        <button onClick={gerarRelatorioAuditores} className="px-4 py-2 bg-teal-600 text-white rounded hover:bg-teal-700">
+                        <button onClick={() => setModalRelatorio(true)} className="px-4 py-2 bg-teal-600 text-white rounded hover:bg-teal-700">
                             📑 Relatório PDF
                         </button>
 
@@ -1937,6 +1973,10 @@ function Taxas({ valorUfica, setValorUfica }) {
 
                         <button onClick={desmarcarTodasCores} className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600" title="Remove a marcação de cor/linha de todos os contribuintes visíveis na lista atual">
                             🧹 Desmarcar Todas
+                        </button>
+
+                        <button onClick={resetarRelatorio} className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600" title="Faz todo mundo voltar a aparecer no relatório 'Somente novos' (não mexe em Auditor/OS)">
+                            🏷️ Resetar Relatório
                         </button>
 
                         <div className="flex items-center gap-2 bg-white border-2 border-blue-500 rounded px-3 py-2 min-w-[300px]">
@@ -2507,6 +2547,53 @@ function Taxas({ valorUfica, setValorUfica }) {
                                 onClick={() => setModalReprocessar(false)}
                                 className="flex-1 bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
                                 disabled={rodando}
+                            >
+                                ✗ Cancelar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 📑 MODAL RELATÓRIO PDF */}
+            {modalRelatorio && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded p-6 max-w-md">
+                        <h3 className="text-xl font-bold mb-2">📑 Relatório PDF</h3>
+                        <p className="text-sm text-gray-500 mb-4">Escolha quem entra no relatório desta competência ({MESES[mes]}/{ano}):</p>
+                        <div className="space-y-2 mb-4">
+                            <label className="flex items-start gap-2 p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
+                                <input type="radio" name="modoRelatorio" className="mt-1" checked={modoRelatorio === 'novos'} onChange={() => setModoRelatorio('novos')} />
+                                <span>
+                                    <span className="font-semibold block">🆕 Somente novos (recomendado)</span>
+                                    <span className="text-xs text-gray-500">{list.filter(l => !l.relatorioGeradoEm).length} contribuinte(s) ainda não incluído(s) em nenhum relatório anterior.</span>
+                                </span>
+                            </label>
+                            <label className="flex items-start gap-2 p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
+                                <input type="radio" name="modoRelatorio" className="mt-1" checked={modoRelatorio === 'todos'} onChange={() => setModoRelatorio('todos')} />
+                                <span>
+                                    <span className="font-semibold block">📋 Todos</span>
+                                    <span className="text-xs text-gray-500">{list.length} contribuinte(s) da competência, incluindo quem já saiu em relatório anterior.</span>
+                                </span>
+                            </label>
+                        </div>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={async () => {
+                                    setGerandoRelatorio(true);
+                                    await gerarRelatorioAuditores(modoRelatorio);
+                                    setGerandoRelatorio(false);
+                                    setModalRelatorio(false);
+                                }}
+                                className="flex-1 bg-teal-600 text-white px-4 py-2 rounded hover:bg-teal-700"
+                                disabled={gerandoRelatorio}
+                            >
+                                {gerandoRelatorio ? '🔄 Gerando...' : '▶️ Gerar'}
+                            </button>
+                            <button
+                                onClick={() => setModalRelatorio(false)}
+                                className="flex-1 bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
+                                disabled={gerandoRelatorio}
                             >
                                 ✗ Cancelar
                             </button>
