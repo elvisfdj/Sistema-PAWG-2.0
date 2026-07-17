@@ -19,6 +19,33 @@ function Editais() {
     const [carregando, setCarregando] = useState(false);
     const [gerando, setGerando] = useState(false);
     const [previa, setPrevia] = useState(null);
+    const [duplicadosIgnorados, setDuplicadosIgnorados] = useState(0);
+
+    // 🎯 Remove duplicatas por CNPJ/CPF (mesma regra da aba "Duplicidade" em Contribuintes):
+    // dentro de cada grupo com o mesmo documento, mantém só a MENOR inscrição municipal —
+    // as demais são duplicatas e NÃO devem ir pro edital (senão publica a mesma
+    // empresa duas vezes, uma pela inscrição certa e outra pela duplicada).
+    const removerDuplicados = (lista) => {
+        const documentos = {};
+        lista.forEach(c => {
+            if (!c.documento) return;
+            if (!documentos[c.documento]) documentos[c.documento] = [];
+            documentos[c.documento].push(c);
+        });
+        const idsSecundarios = new Set();
+        Object.values(documentos).forEach(grupo => {
+            if (grupo.length <= 1) return;
+            const ordenado = [...grupo].sort((a, b) => {
+                const ia = parseInt(a.inscricaoMunicipal, 10);
+                const ib = parseInt(b.inscricaoMunicipal, 10);
+                if (!isNaN(ia) && !isNaN(ib)) return ia - ib;
+                return String(a.inscricaoMunicipal || '').localeCompare(String(b.inscricaoMunicipal || ''));
+            });
+            ordenado.slice(1).forEach(c => idsSecundarios.add(c.id));
+        });
+        setDuplicadosIgnorados(idsSecundarios.size);
+        return lista.filter(c => !idsSecundarios.has(c.id));
+    };
 
     useEffect(() => {
         const carregar = async () => {
@@ -44,7 +71,7 @@ function Editais() {
                         }
                     }
                 }
-                setContribuintes(lista);
+                setContribuintes(removerDuplicados(lista));
             } catch (err) {
                 console.error('Erro ao carregar:', err);
                 alert('Erro ao carregar contribuintes: ' + err.message);
@@ -249,6 +276,11 @@ function Editais() {
                                 ) : (
                                     <span className="px-3 py-2 bg-blue-50 text-blue-700 rounded-lg text-sm font-medium border border-blue-200">
                                         {contribuintes.length} contribuintes carregados
+                                    </span>
+                                )}
+                                {!carregando && duplicadosIgnorados > 0 && (
+                                    <span className="px-3 py-2 bg-orange-50 text-orange-700 rounded-lg text-sm font-medium border border-orange-200" title="Duplicatas (mesmo CNPJ/CPF) removidas automaticamente — só a menor inscrição de cada uma entra no edital">
+                                        ⚠️ {duplicadosIgnorados} duplicidade(s) ignorada(s)
                                     </span>
                                 )}
                             </div>

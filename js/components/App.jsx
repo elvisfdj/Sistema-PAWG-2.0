@@ -220,6 +220,7 @@ function App() {
                                     <li><b>Regime de tributação:</b> marque quais regimes entram (Simples, Lucro Presumido, Lucro Real, MEI, Autônomo, Banco, Isento) — cada opção mostra quantos contribuintes tem naquele regime.</li>
                                     <li><b>Configurações:</b> quantidade máxima de contribuintes por edital (o sistema divide em vários arquivos automaticamente) e o número inicial do edital.</li>
                                     <li><b>Ordenação:</b> primeiro filtra por regime e ordena por Inscrição Municipal pra dividir em lotes; dentro de cada lote, reordena por Razão Social (A–Z).</li>
+                                    <li><b>Duplicidades:</b> quando o mesmo CNPJ/CPF aparece mais de uma vez (mesma regra da aba Duplicidade em Contribuintes), só a menor inscrição municipal entra no edital — as demais são ignoradas automaticamente, pra não publicar a mesma empresa duas vezes.</li>
                                     <li><b>Prévia:</b> mostra quantos contribuintes entraram, quantos editais serão gerados e o nome de cada arquivo antes de gerar.</li>
                                     <li><b>Gerar Edital(is):</b> baixa um .docx por lote (Edital_001.docx, Edital_002.docx...), com o texto legal do CTM (Art. 150, 305 e 357) e tabela de contribuintes.</li>
                                 </ul>
