@@ -793,15 +793,19 @@ function Taxas({ valorUfica, setValorUfica }) {
     };
 
     const calcVISA = (area, tributacao, porte, precisaVisa) => {
-        if (tributacao === 'MEI' || tributacao === 'ISENTO' || !precisaVisa) return 0;
-        if (!area || area === 0) return 0;
+    if (tributacao === 'MEI' || tributacao === 'ISENTO' || !precisaVisa) return 0;
+    if (!area || area === 0) return 0;
 
-        const faixa = TABELA_VISA.find(f => area >= f.min && area <= f.max);
-        if (!faixa) return 0;
+    const faixa = TABELA_VISA.find(f => area >= f.min && area <= f.max);
+    if (!faixa) return 0;
 
-        if (tributacao === 'SIMPLES') return faixa.valorME_EPP;
-        return faixa.valorIntegral;
-    };
+    // ME já é sempre SIMPLES (regra de negócio), então cai aqui.
+    // EPP precisa ser checada explicitamente pelo porte, pois pode ter
+    // qualquer tributação (Simples, Lucro Presumido, Lucro Real...).
+    if (tributacao === 'SIMPLES' || porte === 'EPP') return faixa.valorME_EPP;
+
+    return faixa.valorIntegral;
+};
 
     // 🚩 BANDEIRA VISA — cor por nível de risco do CNAE (Res. SES-RJ 2191/20).
     // Continua marcável/desmarcável manualmente (clique na bandeira alterna precisaVisa);
