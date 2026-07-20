@@ -796,7 +796,7 @@ function Taxas({ valorUfica, setValorUfica }) {
         if (tributacao === 'MEI' || tributacao === 'ISENTO' || !precisaVisa) return 0;
         if (!area || area === 0) return 0;
 
-        const faixa = TABELA_VISA.find(f => area >= f.min && area <= f.max);
+        const faixa = TABELA_VISA.find(f => area <= f.max);
         if (!faixa) return 0;
 
         if (tributacao === 'SIMPLES' || porte === 'EPP') return faixa.valorME_EPP;
