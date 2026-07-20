@@ -2426,7 +2426,7 @@ function Taxas({ valorUfica, setValorUfica }) {
                                                     </button>
                                                 </td>
                                                 <td className="px-3 py-2">
-                                                    <input type="number" value={l.areaM2 || ''} onChange={e => update(l.id, 'areaM2', Number(e.target.value))} className="px-2 py-1 border rounded w-16 text-xs" disabled={!l.precisaVisa} />
+                                                    <input type="number" value={l.areaM2 || ''} onChange={e => update(l.id, 'areaM2', Number(String(e.target.value).replace(',', '.')) || 0)} className="px-2 py-1 border rounded w-16 text-xs" disabled={!l.precisaVisa} />
                                                 </td>
                                                 <td className="px-3 py-2">
                                                     <input type="text" value={l.ordemServico || ''} onChange={e => update(l.id, 'ordemServico', e.target.value)} placeholder="N° OS" className="px-2 py-1 border rounded w-20 text-xs" />
