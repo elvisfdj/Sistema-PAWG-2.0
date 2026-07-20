@@ -799,7 +799,7 @@ function Taxas({ valorUfica, setValorUfica }) {
         const faixa = TABELA_VISA.find(f => area >= f.min && area <= f.max);
         if (!faixa) return 0;
 
-        if (tributacao === 'SIMPLES') return faixa.valorME_EPP;
+        if (tributacao === 'SIMPLES' || porte === 'EPP') return faixa.valorME_EPP;
         return faixa.valorIntegral;
     };
 
