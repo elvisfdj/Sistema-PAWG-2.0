@@ -692,14 +692,21 @@ function Taxas({ valorUfica, setValorUfica }) {
     };
 
     const consultarTodos = async () => {
-        const naoConsultados = list.filter(l => !l.verificado && l.tipoPessoa === 'CNPJ');
+        // 🖐️ Ignora quem foi classificado manualmente (editadoManualmente) mesmo sem
+        // ter passado pela consulta à Receita ainda — a consulta em lote não deve
+        // sobrescrever uma classificação que o usuário já digitou de propósito.
+        // Pra forçar a reconsulta de um desses, use o botão individual da linha.
+        const naoConsultados = list.filter(l => !l.verificado && !l.editadoManualmente && l.tipoPessoa === 'CNPJ');
+        const ignoradosManualmente = list.filter(l => !l.verificado && l.editadoManualmente && l.tipoPessoa === 'CNPJ').length;
 
         if (naoConsultados.length === 0) {
-            alert('✅ Todos os CNPJs já foram consultados!');
+            alert(ignoradosManualmente > 0
+                ? `✅ Não há CNPJs pendentes para consulta em lote.\n\n☑️ ${ignoradosManualmente} contribuinte(s) classificado(s) manualmente foram ignorados (use o botão individual na linha se quiser reconsultar algum).`
+                : '✅ Todos os CNPJs já foram consultados!');
             return;
         }
 
-        if (!confirm(`🔍 Consultar ${naoConsultados.length} CNPJs?\n\n⏱️ Tempo estimado: ~${Math.ceil(naoConsultados.length * 12 / 60)} minutos\n\n⚠️ Delay de 12 segundos entre consultas.`)) {
+        if (!confirm(`🔍 Consultar ${naoConsultados.length} CNPJs?\n\n⏱️ Tempo estimado: ~${Math.ceil(naoConsultados.length * 12 / 60)} minutos\n\n⚠️ Delay de 12 segundos entre consultas.${ignoradosManualmente > 0 ? `\n\n☑️ ${ignoradosManualmente} classificado(s) manualmente serão ignorados.` : ''}`)) {
             return;
         }
 
